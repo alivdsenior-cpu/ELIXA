@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ELIXA — Tejido de Inteligencia Distribuida. Sistema vivo construido en Rust + Elixir con visualización holográfica en tiempo real." />
+  <title>ELIXA — Fabric Distribuido</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --elixa-cyan:    #00f5ff;
+      --elixa-violet:  #7c3aed;
+      --elixa-magenta: #e879f9;
+      --elixa-green:   #10ffb0;
+      --elixa-red:     #ff2d6b;
+      --elixa-amber:   #fbbf24;
+      --glass-bg:      rgba(5, 10, 30, 0.72);
+      --glass-border:  rgba(0, 245, 255, 0.15);
+      --font-ui:       'Space Grotesk', sans-serif;
+      --font-mono:     'JetBrains Mono', monospace;
+    }
+
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #000408;
+      font-family: var(--font-ui);
+      color: #e2e8f0;
+      cursor: none;
+    }
+
+    /* ── Canvas ───────────────────────────────────────────────────── */
+    #canvas-container {
+      position: fixed; inset: 0; z-index: 0;
+    }
+    canvas { display: block; width: 100% !important; height: 100% !important; }
+
+    /* ── Scanlines overlay ────────────────────────────────────────── */
+    #scanlines {
+      position: fixed; inset: 0; z-index: 1; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 245, 255, 0.018) 2px,
+        rgba(0, 245, 255, 0.018) 4px
+      );
+    }
+
+    /* ── Vignette ─────────────────────────────────────────────────── */
+    #vignette {
+      position: fixed; inset: 0; z-index: 2; pointer-events: none;
+      background: radial-gradient(ellipse at center,
+        transparent 50%,
+        rgba(0,0,0,0.72) 100%
+      );
+    }
+
+    /* ── Custom cursor ────────────────────────────────────────────── */
+    #cursor-ring {
+      position: fixed; z-index: 9999; pointer-events: none;
+      width: 32px; height: 32px;
+      border: 1.5px solid var(--elixa-cyan);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      transition: transform 0.08s ease, width 0.2s, height 0.2s, opacity 0.2s;
+      mix-blend-mode: screen;
+    }
+    #cursor-dot {
+      position: fixed; z-index: 9999; pointer-events: none;
+      width: 4px; height: 4px;
+      background: var(--elixa-cyan);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 8px var(--elixa-cyan);
+    }
+
+    /* ── Glass panel base ─────────────────────────────────────────── */
+    .panel {
+      position: fixed; z-index: 10;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      padding: 16px 20px;
+      font-size: 11px;
+      line-height: 1.6;
+      box-shadow:
+        0 0 0 1px rgba(0,245,255,0.06),
+        0 20px 40px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--elixa-cyan);
+      margin-bottom: 12px;
+      opacity: 0.8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-title::before {
+      content: '';
+      display: block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--elixa-cyan);
+      box-shadow: 0 0 8px var(--elixa-cyan);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    /* ── Logo / Header ────────────────────────────────────────────── */
+    #header {
+      top: 24px; left: 50%; transform: translateX(-50%);
+      padding: 10px 32px;
+      text-align: center;
+      min-width: 320px;
+    }
+    .logo-text {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      background: linear-gradient(135deg, var(--elixa-cyan) 0%, var(--elixa-magenta) 50%, var(--elixa-violet) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: logo-shimmer 4s ease-in-out infinite;
+    }
+    .logo-sub {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.3em;
+      color: rgba(0,245,255,0.5);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    /* ── Left panel — Global metrics ──────────────────────────────── */
+    #panel-metrics {
+      top: 50%; left: 20px;
+      transform: translateY(-50%);
+      width: 220px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(0,245,255,0.06);
+    }
+    .metric-row:last-child { border-bottom: none; }
+
+    .metric-label {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: rgba(200,220,255,0.5);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--elixa-cyan);
+      text-shadow: 0 0 10px var(--elixa-cyan);
+      transition: color 0.3s;
+    }
+    .metric-value.warn { color: var(--elixa-amber); text-shadow: 0 0 10px var(--elixa-amber); }
+    .metric-value.crit { color: var(--elixa-red); text-shadow: 0 0 10px var(--elixa-red); }
+
+    .bar-container {
+      margin-top: 4px;
+      height: 3px;
+      background: rgba(0,245,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+      background: linear-gradient(90deg, var(--elixa-cyan), var(--elixa-magenta));
+    }
+
+    /* ── Right panel — Node list ──────────────────────────────────── */
+    #panel-nodes {
+      top: 50%; right: 20px;
+      transform: translateY(-50%);
+      width: 200px;
+      max-height: 420px;
+      overflow: hidden;
+    }
+
+    .node-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      transition: opacity 0.3s;
+    }
+    .node-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    .health-nominal   { background: var(--elixa-green); box-shadow: 0 0 6px var(--elixa-green); }
+    .health-degraded  { background: var(--elixa-amber); box-shadow: 0 0 6px var(--elixa-amber); }
+    .health-critical  { background: var(--elixa-red);   box-shadow: 0 0 8px var(--elixa-red); animation: blink 0.5s ease-in-out infinite; }
+    .health-recovering{ background: var(--elixa-cyan);  box-shadow: 0 0 6px var(--elixa-cyan); }
+
+    .node-id   { color: rgba(200,220,255,0.5); flex: 1; }
+    .node-sig  { color: var(--elixa-cyan); }
+
+    /* ── Bottom panel — Log stream ────────────────────────────────── */
+    #panel-log {
+      bottom: 20px; left: 50%; transform: translateX(-50%);
+      width: 560px;
+      max-height: 120px;
+      overflow: hidden;
+    }
+
+    #log-stream {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: rgba(0,245,255,0.6);
+      line-height: 1.7;
+      max-height: 88px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column-reverse;
+    }
+    .log-line { animation: fade-in 0.3s ease; }
+    .log-line .ts { color: rgba(124, 58, 237, 0.7); margin-right: 8px; }
+    .log-line .msg { color: rgba(0,245,255,0.7); }
+    .log-line.warn .msg { color: var(--elixa-amber); }
+    .log-line.crit .msg { color: var(--elixa-red); }
+
+    /* ── Bottom-left — Tech stack badges ─────────────────────────── */
+    #panel-stack {
+      bottom: 20px; left: 20px;
+      padding: 12px 16px;
+    }
+    .stack-badges {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .badge {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid;
+      text-transform: uppercase;
+    }
+    .badge-rust   { color: #f97316; border-color: #f97316; background: rgba(249,115,22,0.08); }
+    .badge-elixir { color: var(--elixa-violet); border-color: var(--elixa-violet); background: rgba(124,58,237,0.08); }
+    .badge-live   { color: var(--elixa-green); border-color: var(--elixa-green); background: rgba(16,255,176,0.08);
+                    animation: pulse-badge 2s ease-in-out infinite; }
+
+    /* ── Top-right — Connection status ───────────────────────────── */
+    #panel-status {
+      top: 24px; right: 20px;
+      padding: 10px 16px;
+    }
+    .status-row {
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--font-mono); font-size: 9px;
+    }
+    .status-indicator {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--elixa-green);
+      box-shadow: 0 0 8px var(--elixa-green);
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+    .status-indicator.offline { background: var(--elixa-red); box-shadow: 0 0 8px var(--elixa-red); animation: none; }
+
+    /* ── Tooltip flotante ─────────────────────────────────────────── */
+    #tooltip {
+      position: fixed; z-index: 100; pointer-events: none;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      backdrop-filter: blur(20px);
+      opacity: 0;
+      transition: opacity 0.2s;
+      max-width: 200px;
+    }
+    #tooltip.visible { opacity: 1; }
+    .tooltip-id { color: var(--elixa-cyan); font-weight: 500; margin-bottom: 6px; font-size: 11px; }
+    .tooltip-row { display: flex; justify-content: space-between; gap: 16px; color: rgba(200,220,255,0.6); padding: 1px 0; }
+    .tooltip-val { color: #e2e8f0; }
+
+    /* ── Keyframe animations ──────────────────────────────────────── */
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+    @keyframes logo-shimmer {
+      0%, 100% { filter: brightness(1); }
+      50%       { filter: brightness(1.3); }
+    }
+    @keyframes pulse-badge {
+      0%, 100% { box-shadow: none; }
+      50%       { box-shadow: 0 0 12px var(--elixa-green); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Intro splash ─────────────────────────────────────────────── */
+    #intro {
+      position: fixed; inset: 0; z-index: 1000;
+      background: #000408;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 24px;
+      transition: opacity 1s ease;
+    }
+    #intro.hidden { opacity: 0; pointer-events: none; }
+
+    .intro-logo {
+      font-size: 72px; font-weight: 700;
+      letter-spacing: 0.4em;
+      background: linear-gradient(135deg, var(--elixa-cyan) 0%, var(--elixa-magenta) 50%, var(--elixa-violet) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: logo-shimmer 2s ease-in-out infinite;
+    }
+    .intro-sub {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.35em;
+      color: rgba(0,245,255,0.45);
+      text-transform: uppercase;
+    }
+    .intro-loader {
+      width: 280px; height: 2px;
+      background: rgba(0,245,255,0.1);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .intro-loader-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--elixa-cyan), var(--elixa-magenta));
+      border-radius: 1px;
+      animation: loader-fill 2.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    .intro-msg {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: rgba(0,245,255,0.3);
+      letter-spacing: 0.1em;
+    }
+    @keyframes loader-fill {
+      0%   { width: 0%; }
+      60%  { width: 85%; }
+      100% { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Intro splash ──────────────────────────────────────────────── -->
+  <div id="intro">
+    <div class="intro-logo">ELIXA</div>
+    <div class="intro-sub">Fabric de Inteligencia Distribuida</div>
+    <div class="intro-loader"><div class="intro-loader-fill"></div></div>
+    <div class="intro-msg" id="intro-msg">Inicializando motor Rust...</div>
+  </div>
+
+  <!-- ── 3D Scene ──────────────────────────────────────────────────── -->
+  <div id="canvas-container"></div>
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+
+  <!-- ── Custom Cursor ─────────────────────────────────────────────── -->
+  <div id="cursor-ring"></div>
+  <div id="cursor-dot"></div>
+
+  <!-- ── Tooltip ───────────────────────────────────────────────────── -->
+  <div id="tooltip">
+    <div class="tooltip-id" id="tt-id">node_000</div>
+    <div class="tooltip-row"><span>SEÑAL</span><span class="tooltip-val" id="tt-sig">—</span></div>
+    <div class="tooltip-row"><span>LATENCIA</span><span class="tooltip-val" id="tt-lat">—</span></div>
+    <div class="tooltip-row"><span>ENTROPÍA</span><span class="tooltip-val" id="tt-ent">—</span></div>
+    <div class="tooltip-row"><span>ESTADO</span><span class="tooltip-val" id="tt-hlt">—</span></div>
+    <div class="tooltip-row"><span>HASH/s</span><span class="tooltip-val" id="tt-hr">—</span></div>
+  </div>
+
+  <!-- ── Header ────────────────────────────────────────────────────── -->
+  <div class="panel" id="header">
+    <div class="logo-text">ELIXA</div>
+    <div class="logo-sub">Distributed Intelligence Fabric · Rust + Elixir</div>
+  </div>
+
+  <!-- ── Left: Global Metrics ──────────────────────────────────────── -->
+  <div class="panel" id="panel-metrics">
+    <div class="panel-title">métricas globales</div>
+
+    <div class="metric-row">
+      <span class="metric-label">NODOS ACTIVOS</span>
+      <span class="metric-value" id="m-nodes">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">ENTROPÍA GLOBAL</span>
+      <span class="metric-value" id="m-entropy">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">THROUGHPUT</span>
+      <span class="metric-value" id="m-throughput">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">HASH STORM</span>
+      <span class="metric-value" id="m-hashstorm">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">CONEXIONES</span>
+      <span class="metric-value" id="m-conns">—</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">TICK</span>
+      <span class="metric-value" id="m-tick">—</span>
+    </div>
+
+    <div style="margin-top:14px;">
+      <div class="metric-label" style="margin-bottom:6px;">SEÑAL MEDIA DEL FABRIC</div>
+      <div class="bar-container">
+        <div class="bar-fill" id="bar-signal" style="width:50%"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <div class="metric-label" style="margin-bottom:6px;">DISTRIBUCIÓN DE SALUD</div>
+      <div style="display:flex;gap:4px;margin-top:4px;">
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:16px;font-weight:600;color:var(--elixa-green)" id="h-nominal">—</div>
+          <div class="metric-label">OK</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:16px;font-weight:600;color:var(--elixa-amber)" id="h-degraded">—</div>
+          <div class="metric-label">DEG</div>
+        </div>
+        <div style="flex:1;text-align:center;">
+          <div style="font-size:16px;font-weight:600;color:var(--elixa-red)" id="h-critical">—</div>
+          <div class="metric-label">CRIT</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Node List ───────────────────────────────────────────── -->
+  <div class="panel" id="panel-nodes">
+    <div class="panel-title">nodos activos</div>
+    <div id="node-list"></div>
+  </div>
+
+  <!-- ── Bottom center: Log ────────────────────────────────────────── -->
+  <div class="panel" id="panel-log">
+    <div class="panel-title">telemetría en vivo</div>
+    <div id="log-stream"></div>
+  </div>
+
+  <!-- ── Bottom left: Stack ────────────────────────────────────────── -->
+  <div class="panel" id="panel-stack">
+    <div class="panel-title">motor del fabric</div>
+    <div class="stack-badges">
+      <div class="badge badge-rust">🦀 Rust</div>
+      <div class="badge badge-elixir">💧 Elixir</div>
+      <div class="badge badge-live">● VIVO</div>
+    </div>
+  </div>
+
+  <!-- ── Top right: Status ─────────────────────────────────────────── -->
+  <div class="panel" id="panel-status">
+    <div class="status-row">
+      <div class="status-indicator" id="status-dot"></div>
+      <span style="font-family:var(--font-mono);font-size:9px;color:rgba(200,220,255,0.6)" id="status-text">FABRIC ACTIVO</span>
+    </div>
+    <div style="margin-top:6px;font-family:var(--font-mono);font-size:9px;color:rgba(0,245,255,0.4)" id="status-fps">— fps</div>
+  </div>
+
+  <script src="js/elixa.js"></script>
+</body>
+</html>
